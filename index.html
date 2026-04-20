@@ -560,6 +560,9 @@
         <div class="field" style="margin-top:2px;">
           <label><input type="checkbox" id="correlatedOnly" /> Show storm-correlated outages only</label>
         </div>
+        <div class="field" style="margin-top:2px;">
+          <label><input type="checkbox" id="includeMomentary" checked /> Include momentary outages (≤ 5 min)</label>
+        </div>
         <div class="grid-2">
           <button class="btn" id="resetFiltersBtn">Reset filters</button>
           <button class="btn" id="zoomFilteredBtn">Zoom to filtered</button>
@@ -602,16 +605,16 @@
   <div class="loader-card">
     <div class="loader-title">Load Storm Event Data</div>
     <div class="loader-sub">
-      Use the embedded April 17–20, 2026 sample event, or upload the next outage workbook and lightning CSV.
+      Use the embedded April 17–20, 2026 sample event, or upload the next outage workbook / SYLK (.slk) file and lightning CSV.
       Service area geometry, district colors, and town labels remain built in.
     </div>
 
     <div class="upload-grid">
       <div class="dropzone" id="dropOutage">
-        <input type="file" id="fileOutage" accept=".xlsx,.xls" />
+        <input type="file" id="fileOutage" accept=".xlsx,.xls,.slk" />
         <div class="drop-icon" id="iconOutage">📋</div>
         <div class="drop-main">Outage export</div>
-        <div class="drop-sub">Cayden OMS / OutageView workbook</div>
+        <div class="drop-sub">Cayden OMS / OutageView workbook or SYLK (.slk)</div>
         <div class="drop-meta" id="metaOutage">No file loaded</div>
       </div>
       <div class="dropzone" id="dropStrike">
@@ -790,9 +793,15 @@ function causeColor(v) {
   }[g] || '#94a3b8';
 }
 
+const MOMENTARY_THRESHOLD_MINUTES = 5;
+
 function markerRadius(customers) {
   const n = Number(customers) || 0;
   return Math.max(4, Math.min(18, 4 + Math.sqrt(n)));
+}
+
+function isMomentaryOutage(outage) {
+  return (Number(outage?.duration) || 0) <= MOMENTARY_THRESHOLD_MINUTES;
 }
 
 function haversineMiles(lat1, lon1, lat2, lon2) {
@@ -871,9 +880,12 @@ async function parseOutageFile(file) {
   const buf = await file.arrayBuffer();
   const wb = XLSX.read(buf, { type: 'array' });
   const ws = wb.Sheets[wb.SheetNames[0]];
+  if (!ws) throw new Error('No worksheet found in outage file.');
   const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
   if (!rows.length) throw new Error('No outage rows found.');
-  return rows.map(normalizeOutageRow).filter(o => o.lat && o.lon);
+  const normalized = rows.map(normalizeOutageRow).filter(o => o.lat && o.lon);
+  if (!normalized.length) throw new Error('No outage rows with usable coordinates were found.');
+  return normalized;
 }
 
 function parseCsvRows(text) {
@@ -1260,6 +1272,7 @@ function applyFilters() {
   const weather = document.getElementById('weatherFilter').value;
   const minCust = +document.getElementById('customerRange').value || 0;
   const correlatedOnly = document.getElementById('correlatedOnly').checked;
+  const includeMomentary = document.getElementById('includeMomentary').checked;
 
   STATE.filteredOutages = STATE.outages.filter(o => {
     const hay = [
@@ -1271,6 +1284,7 @@ function applyFilters() {
     if (cause && causeGroup(o.cause) !== cause) return false;
     if (weather && weatherGroup(o.weather) !== weather) return false;
     if ((Number(o.customers) || 0) < minCust) return false;
+    if (!includeMomentary && isMomentaryOutage(o)) return false;
     if (correlatedOnly && !o.stormRelated) return false;
     return true;
   });
@@ -1369,7 +1383,7 @@ function wireUI() {
     });
   });
 
-  ['searchBox','districtFilter','causeFilter','weatherFilter','correlatedOnly'].forEach(id => {
+  ['searchBox','districtFilter','causeFilter','weatherFilter','correlatedOnly','includeMomentary'].forEach(id => {
     document.getElementById(id).addEventListener('input', applyFilters);
     document.getElementById(id).addEventListener('change', applyFilters);
   });
@@ -1390,6 +1404,7 @@ function wireUI() {
     document.getElementById('customerRange').value = '0';
     document.getElementById('customerRangeValue').textContent = '0';
     document.getElementById('correlatedOnly').checked = false;
+    document.getElementById('includeMomentary').checked = true;
     applyFilters();
   });
   document.getElementById('zoomFilteredBtn').addEventListener('click', () => {
@@ -1434,6 +1449,7 @@ function exportFilteredCsv() {
     CustomersAffected: o.customers,
     OutageStartTime: o.start,
     InterruptionDuration: o.duration,
+    IsMomentary: isMomentaryOutage(o) ? 'Yes' : 'No',
     TroubledElement: o.element,
     NearestStrikeMiles: o.nearestStrikeMiles ?? '',
     NearestStrikeTime: o.nearestStrikeTime ?? '',
@@ -1486,15 +1502,15 @@ document.getElementById('fileOutage').addEventListener('change', async (e) => {
   const file = e.target.files?.[0];
   if (!file) return;
   try {
-    setLoading(true, 'Parsing outage workbook…');
+    setLoading(true, 'Parsing outage file…');
     const data = await parseOutageFile(file);
-    loadEventData(data, STATE.strikes, file.name, 'Uploaded outage workbook');
+    loadEventData(data, STATE.strikes, file.name, 'Uploaded outage file');
     setDropReady('outage', true, `${file.name} · ${data.length.toLocaleString()} outages`);
     document.getElementById('parseError').textContent = '';
     if (STATE.map && STATE.outages.length && STATE.strikes.length) showUpload(false);
   } catch (err) {
     document.getElementById('parseError').textContent = 'Outage file error: ' + err.message;
-    setDropReady('outage', false, 'Could not parse outage workbook');
+    setDropReady('outage', false, 'Could not parse outage file');
   } finally {
     setLoading(false);
   }
