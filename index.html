@@ -151,7 +151,7 @@
     text-transform: uppercase;
     letter-spacing: 1px;
   }
-  .field input[type="text"], .field select {
+  .field input[type="text"], .field input[type="number"], .field input[type="datetime-local"], .field select {
     width:100%;
     background:#08111d;
     color:var(--text);
@@ -160,6 +160,26 @@
     padding:10px 10px;
   }
   .field input[type="range"] { width:100%; }
+  .range-pair {
+    display:grid;
+    grid-template-columns: minmax(0,1fr) 92px;
+    gap: 8px;
+    align-items:center;
+  }
+  .range-pair input[type="number"] {
+    text-align:right;
+  }
+  .range-meta {
+    display:flex;
+    justify-content:space-between;
+    gap: 8px;
+    color: var(--muted);
+    font-size: 11px;
+  }
+  .range-meta strong {
+    color: var(--accent-2);
+    font-weight: 800;
+  }
   .toggle-row {
     display:flex;
     justify-content:space-between;
@@ -487,11 +507,10 @@
 <body>
 <div id="app">
   <header>
-    <div class="brand">
-      <div class="brand-top">Optimus Combined | BRRS Workspace</div>
-      <div class="brand-main">BEC Storm Operations Map</div>
-      <div class="brand-sub" id="headerSub">Interactive satellite map with service area, outages, and lightning overlays</div>
-    </div>
+	    <div class="brand">
+	      <div class="brand-main">BEC Storm Operations Map</div>
+	      <div class="brand-sub" id="headerSub">Data range: no event loaded yet.</div>
+	    </div>
     <div class="header-actions">
       <div class="stat"><div class="v" id="statStrikes">0</div><div class="l">Lightning</div></div>
       <div class="stat"><div class="v" id="statOutages">0</div><div class="l">Outages</div></div>
@@ -513,16 +532,20 @@
         </div>
       </div>
 
-      <div class="section">
-        <h3>Map Layers</h3>
-        <div class="toggle-row"><div class="label"><span class="dot" style="background:#facc15;"></span>Lightning points</div><div class="toggle on" data-layer="strikes"></div></div>
-        <div class="toggle-row"><div class="label"><span class="dot" style="background:#ef4444;"></span>Lightning heat</div><div class="toggle" data-layer="heat"></div></div>
+	      <div class="section">
+	        <h3>Map Layers</h3>
+	        <div class="toggle-row"><div class="label"><span class="dot" style="background:#facc15;"></span>Lightning points</div><div class="toggle on" data-layer="strikes"></div></div>
+	        <div class="toggle-row"><div class="label"><span class="dot" style="background:#ef4444;"></span>Lightning heat</div><div class="toggle" data-layer="heat"></div></div>
         <div class="toggle-row"><div class="label"><span class="dot" style="background:#ffb020;"></span>Outage circles</div><div class="toggle on" data-layer="outages"></div></div>
         <div class="toggle-row"><div class="label"><span class="dot" style="background:#15c6b4;"></span>Correlation rings</div><div class="toggle on" data-layer="correlated"></div></div>
         <div class="toggle-row"><div class="label"><span class="dot" style="background:#2da5ff;"></span>Service area</div><div class="toggle on" data-layer="service"></div></div>
-        <div class="toggle-row"><div class="label"><span class="dot" style="background:#ffffff;"></span>Town labels</div><div class="toggle on" data-layer="towns"></div></div>
-        <div class="toggle-row"><div class="label"><span class="dot" style="background:#9fb2cc;"></span>Place labels</div><div class="toggle on" data-layer="labels"></div></div>
-      </div>
+	        <div class="toggle-row"><div class="label"><span class="dot" style="background:#ffffff;"></span>Town labels</div><div class="toggle on" data-layer="towns"></div></div>
+	        <div class="toggle-row"><div class="label"><span class="dot" style="background:#9fb2cc;"></span>Place labels</div><div class="toggle on" data-layer="labels"></div></div>
+	        <div class="field" style="margin-top:12px;">
+	          <label for="layerOpacityRange">Layer opacity: <span id="layerOpacityValue">65%</span></label>
+	          <input type="range" id="layerOpacityRange" min="10" max="100" step="1" value="65" />
+	        </div>
+	      </div>
 
       <div class="section">
         <h3>Filters</h3>
@@ -553,10 +576,24 @@
             </select>
           </div>
         </div>
-        <div class="field">
-          <label for="customerRange">Minimum customers affected: <span id="customerRangeValue">0</span></label>
-          <input type="range" id="customerRange" min="0" max="200" value="0" />
-        </div>
+	        <div class="grid-2">
+	          <div class="field">
+	            <label for="startDateFilter">Start date/time</label>
+	            <input type="datetime-local" id="startDateFilter" />
+	          </div>
+	          <div class="field">
+	            <label for="endDateFilter">End date/time</label>
+	            <input type="datetime-local" id="endDateFilter" />
+	          </div>
+	        </div>
+	        <div class="field">
+	          <label for="customerRange">Minimum customers affected: <span id="customerRangeValue">0</span></label>
+	          <div class="range-pair">
+	            <input type="range" id="customerRange" min="0" max="200" step="1" value="0" />
+	            <input type="number" id="customerMinInput" min="0" step="1" value="0" inputmode="numeric" />
+	          </div>
+	          <div class="range-meta"><span>Use the box for an exact minimum</span><span>Max <strong id="customerRangeMax">200</strong></span></div>
+	        </div>
         <div class="field" style="margin-top:2px;">
           <label><input type="checkbox" id="correlatedOnly" /> Show storm-correlated outages only</label>
         </div>
@@ -677,14 +714,19 @@ const STATE = {
   dataReady: false,
   usingSample: false,
   eventLabel: '',
-  sourceLabel: '',
-  outages: [],
-  strikes: [],
-  filteredOutages: [],
-  filteredBounds: null,
-  layerIndex: {},
-  activePopupMarker: null,
-  layerState: {
+	  sourceLabel: '',
+	  outages: [],
+	  strikes: [],
+	  filteredOutages: [],
+	  filteredStrikes: [],
+	  filteredBounds: null,
+	  layerIndex: {},
+	  activePopupMarker: null,
+	  heatLayer: null,
+	  layerOpacity: 0.65,
+	  maxCustomers: 200,
+	  dataTimeRange: null,
+	  layerState: {
     strikes: true,
     heat: false,
     outages: true,
@@ -747,18 +789,109 @@ function lccToWGS84(x_ft, y_ft) {
 function parseDateMaybe(value) {
   if (!value) return null;
   const raw = String(value).trim();
-  const d = new Date(raw.includes('T') ? raw : raw.replace(' ', 'T'));
+  const normalized = raw
+    .replace(/^(\d{4}-\d{2}-\d{2})\s+(\d{1,2})\.(\d{2})(?:\.(\d{2}))?$/, (_, date, hour, minute, second='00') => `${date}T${hour.padStart(2,'0')}:${minute}:${second}`)
+    .replace(' ', 'T');
+  const d = new Date(normalized);
   return isNaN(d.getTime()) ? null : d;
 }
 
-function formatDateRange(outages, strikes) {
+function formatDateTimeLocal(date) {
+  if (!date) return '';
+  const pad = n => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function formatDisplayDateTime(date) {
+  return date ? date.toLocaleString([], { month:'2-digit', day:'2-digit', year:'numeric', hour:'numeric', minute:'2-digit' }) : '—';
+}
+
+function getDataTimeRange(outages=STATE.outages, strikes=STATE.strikes) {
   const times = [];
   outages.forEach(o => { const d = parseDateMaybe(o.start); if (d) times.push(d.getTime()); });
+  outages.forEach(o => { const d = parseDateMaybe(o.end); if (d) times.push(d.getTime()); });
   strikes.forEach(s => { const d = parseDateMaybe(s.time); if (d) times.push(d.getTime()); });
-  if (!times.length) return 'No event timestamps found.';
-  const min = new Date(Math.min(...times));
-  const max = new Date(Math.max(...times));
-  return `${min.toLocaleString()} → ${max.toLocaleString()}`;
+  if (!times.length) return null;
+  return { min: new Date(Math.min(...times)), max: new Date(Math.max(...times)) };
+}
+
+function formatDateRange(outages, strikes) {
+  const range = getDataTimeRange(outages, strikes);
+  if (!range) return 'No event timestamps found.';
+  return `${formatDisplayDateTime(range.min)} → ${formatDisplayDateTime(range.max)}`;
+}
+
+function getActiveTimeRange() {
+  const start = parseDateMaybe(document.getElementById('startDateFilter')?.value);
+  const end = parseDateMaybe(document.getElementById('endDateFilter')?.value);
+  return {
+    startMs: start ? start.getTime() : -Infinity,
+    endMs: end ? end.getTime() : Infinity,
+    start,
+    end
+  };
+}
+
+function isWithinActiveRange(value, fallbackValue='') {
+  const d = parseDateMaybe(value) || parseDateMaybe(fallbackValue);
+  if (!d) return true;
+  const t = d.getTime();
+  const { startMs, endMs } = getActiveTimeRange();
+  return t >= startMs && t <= endMs;
+}
+
+function updateRangeDisplays() {
+  const fullRange = STATE.dataTimeRange || getDataTimeRange();
+  const active = getActiveTimeRange();
+  const shownStart = active.start || fullRange?.min || null;
+  const shownEnd = active.end || fullRange?.max || null;
+  const display = shownStart && shownEnd
+    ? `${formatDisplayDateTime(shownStart)} → ${formatDisplayDateTime(shownEnd)}`
+    : 'No event loaded yet.';
+  document.getElementById('headerSub').textContent = `Data range: ${display}`;
+  document.getElementById('eventRange').textContent = STATE.eventLabel
+    ? `${STATE.eventLabel} · ${display}`
+    : `Data range: ${display}`;
+}
+
+function seedTimeFilterControls() {
+  STATE.dataTimeRange = getDataTimeRange();
+  const start = document.getElementById('startDateFilter');
+  const end = document.getElementById('endDateFilter');
+  if (!start || !end || !STATE.dataTimeRange) {
+    updateRangeDisplays();
+    return;
+  }
+  start.min = formatDateTimeLocal(STATE.dataTimeRange.min);
+  start.max = formatDateTimeLocal(STATE.dataTimeRange.max);
+  end.min = formatDateTimeLocal(STATE.dataTimeRange.min);
+  end.max = formatDateTimeLocal(STATE.dataTimeRange.max);
+  start.value = formatDateTimeLocal(STATE.dataTimeRange.min);
+  end.value = formatDateTimeLocal(STATE.dataTimeRange.max);
+  updateRangeDisplays();
+}
+
+function customerSliderToValue(sliderValue) {
+  const max = Math.max(0, STATE.maxCustomers || 0);
+  const pct = Math.max(0, Math.min(100, Number(sliderValue) || 0)) / 100;
+  return Math.round(max * pct * pct);
+}
+
+function customerValueToSlider(customerValue) {
+  const max = Math.max(1, STATE.maxCustomers || 1);
+  const value = Math.max(0, Math.min(max, Number(customerValue) || 0));
+  return Math.round(Math.sqrt(value / max) * 100);
+}
+
+function setCustomerFilterValue(value, source='input') {
+  const max = Math.max(0, STATE.maxCustomers || 0);
+  const normalized = Math.max(0, Math.min(max, Math.round(Number(value) || 0)));
+  const slider = document.getElementById('customerRange');
+  const input = document.getElementById('customerMinInput');
+  document.getElementById('customerRangeValue').textContent = fmtNum(normalized);
+  if (input) input.value = String(normalized);
+  if (slider && source !== 'slider') slider.value = String(customerValueToSlider(normalized));
+  return normalized;
 }
 
 function weatherGroup(v) {
@@ -966,27 +1099,33 @@ function refreshGenerateState() {
 function loadEventData(outages, strikes, label, sourceLabel) {
   STATE.outages = annotateCorrelations(outages, strikes);
   STATE.strikes = strikes;
-  STATE.eventLabel = label || 'Uploaded event';
-  STATE.sourceLabel = sourceLabel || 'Uploaded files';
-  STATE.dataReady = true;
-  document.getElementById('headerSub').textContent = STATE.eventLabel;
-  document.getElementById('footerSource').textContent = `${STATE.sourceLabel} · ${STATE.outages.length} outages · ${STATE.strikes.length} strikes`;
-  refreshGenerateState();
-  if (STATE.map) buildDataLayers();
-}
+	  STATE.eventLabel = label || 'Uploaded event';
+	  STATE.sourceLabel = sourceLabel || 'Uploaded files';
+	  STATE.dataReady = true;
+	  document.getElementById('footerSource').textContent = `${STATE.sourceLabel} · ${STATE.outages.length} outages · ${STATE.strikes.length} strikes`;
+	  seedTimeFilterControls();
+	  refreshGenerateState();
+	  if (STATE.map) buildDataLayers();
+	}
 
 function clearMapData() {
   STATE.filteredOutages = [];
   STATE.filteredBounds = null;
-  STATE.layerIndex = {};
-  STATE.activePopupMarker = null;
-  document.getElementById('statStrikes').textContent = '0';
+	  STATE.layerIndex = {};
+	  STATE.activePopupMarker = null;
+	  STATE.filteredStrikes = [];
+	  STATE.heatLayer = null;
+	  STATE.dataTimeRange = null;
+	  document.getElementById('statStrikes').textContent = '0';
   document.getElementById('statOutages').textContent = '0';
   document.getElementById('statCustomers').textContent = '0';
   document.getElementById('filteredOutagesPill').textContent = 'Filtered outages: 0';
-  document.getElementById('filteredCustomersPill').textContent = 'Filtered customers: 0';
-  document.getElementById('eventRange').textContent = 'No event loaded yet.';
-  document.getElementById('districtBars').innerHTML = '<div class="mini">No outages match the current filters.</div>';
+	  document.getElementById('filteredCustomersPill').textContent = 'Filtered customers: 0';
+	  document.getElementById('eventRange').textContent = 'No event loaded yet.';
+	  document.getElementById('headerSub').textContent = 'Data range: no event loaded yet.';
+	  document.getElementById('startDateFilter').value = '';
+	  document.getElementById('endDateFilter').value = '';
+	  document.getElementById('districtBars').innerHTML = '<div class="mini">No outages match the current filters.</div>';
   document.getElementById('footerSource').textContent = 'Ready for sample or uploaded event data';
   if (STATE.layers?.strikes) STATE.layers.strikes.clearLayers();
   if (STATE.layers?.heat) STATE.layers.heat.clearLayers();
@@ -996,12 +1135,15 @@ function clearMapData() {
 
 function initMap() {
   if (STATE.map) return;
-  STATE.map = L.map('map', {
-    center: [30.13, -96.97],
-    zoom: 9,
-    zoomControl: true,
-    preferCanvas: true
-  });
+	  STATE.map = L.map('map', {
+	    center: [30.13, -96.97],
+	    zoom: 9,
+	    zoomSnap: 0.25,
+	    zoomDelta: 0.5,
+	    wheelPxPerZoomLevel: 38,
+	    zoomControl: true,
+	    preferCanvas: true
+	  });
 
   STATE.baseLayers.imagery = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
     attribution: 'Tiles © Esri',
@@ -1116,33 +1258,8 @@ function buildDataLayers() {
     STATE.layers.correlated.clearLayers();
     STATE.layers.heat.clearLayers();
 
-    const heatPts = [];
-    for (const s of STATE.strikes) {
-      const marker = L.circleMarker([s.lat, s.lon], {
-        pane: 'strikesPane',
-        renderer: STATE.renderers.strikes,
-        radius: 2.2,
-        color: '#facc15',
-        weight: 0,
-        fillColor: '#facc15',
-        fillOpacity: 0.78
-      });
-      marker.bindPopup(`
-        <div style="font-weight:800;margin-bottom:8px;">Lightning strike</div>
-        <div class="popup-grid">
-          <div class="k">Time</div><div class="v">${esc(s.time)}</div>
-          <div class="k">Power</div><div class="v">${esc(s.power)} kA</div>
-          <div class="k">Type</div><div class="v">${esc(s.type)}</div>
-          <div class="k">Lat/Lon</div><div class="v">${s.lat.toFixed(5)}, ${s.lon.toFixed(5)}</div>
-        </div>
-      `);
-      marker.addTo(STATE.layers.strikes);
-      heatPts.push([s.lat, s.lon, 0.4]);
-    }
-    L.heatLayer(heatPts, { radius: 18, blur: 24, maxZoom: 12 }).addTo(STATE.layers.heat);
-
-    populateFilterOptions();
-    applyFilters();
+	    populateFilterOptions();
+	    applyFilters();
     setLoading(false);
   }, 20);
 }
@@ -1159,13 +1276,16 @@ function populateFilterOptions() {
   };
   setOptions('districtFilter', districts, 'All districts');
   setOptions('causeFilter', causes, 'All causes');
-  setOptions('weatherFilter', weather, 'All weather');
-  const maxCust = Math.max(200, ...STATE.outages.map(o => Number(o.customers) || 0));
-  const range = document.getElementById('customerRange');
-  range.max = String(maxCust);
-  if (+range.value > maxCust) range.value = '0';
-  document.getElementById('customerRangeValue').textContent = range.value;
-}
+	  setOptions('weatherFilter', weather, 'All weather');
+	  const maxCust = Math.max(200, ...STATE.outages.map(o => Number(o.customers) || 0));
+	  STATE.maxCustomers = maxCust;
+	  const range = document.getElementById('customerRange');
+	  range.max = '100';
+	  range.step = '1';
+	  document.getElementById('customerMinInput').max = String(maxCust);
+	  document.getElementById('customerRangeMax').textContent = fmtNum(maxCust);
+	  setCustomerFilterValue(Number(document.getElementById('customerMinInput').value) || 0, 'input');
+	}
 
 function popupValueClass(label, value) {
   const text = String(value || '').toLowerCase();
@@ -1267,14 +1387,15 @@ function applyFilters() {
   closeActivePopup();
 
   const search = document.getElementById('searchBox').value.trim().toLowerCase();
-  const district = document.getElementById('districtFilter').value;
-  const cause = document.getElementById('causeFilter').value;
-  const weather = document.getElementById('weatherFilter').value;
-  const minCust = +document.getElementById('customerRange').value || 0;
-  const correlatedOnly = document.getElementById('correlatedOnly').checked;
-  const includeMomentary = document.getElementById('includeMomentary').checked;
+	  const district = document.getElementById('districtFilter').value;
+	  const cause = document.getElementById('causeFilter').value;
+	  const weather = document.getElementById('weatherFilter').value;
+	  const minCust = +document.getElementById('customerMinInput').value || 0;
+	  const correlatedOnly = document.getElementById('correlatedOnly').checked;
+	  const includeMomentary = document.getElementById('includeMomentary').checked;
+	  const { startMs, endMs } = getActiveTimeRange();
 
-  STATE.filteredOutages = STATE.outages.filter(o => {
+	  STATE.filteredOutages = STATE.outages.filter(o => {
     const hay = [
       o.id, o.sub, o.feeder, o.district, o.cause, o.weather,
       o.element, o.crew, o.phase, o.powerStatus
@@ -1282,18 +1403,68 @@ function applyFilters() {
     if (search && !hay.includes(search)) return false;
     if (district && o.district !== district) return false;
     if (cause && causeGroup(o.cause) !== cause) return false;
-    if (weather && weatherGroup(o.weather) !== weather) return false;
-    if ((Number(o.customers) || 0) < minCust) return false;
-    if (!includeMomentary && isMomentaryOutage(o)) return false;
-    if (correlatedOnly && !o.stormRelated) return false;
-    return true;
-  });
+	    if (weather && weatherGroup(o.weather) !== weather) return false;
+	    if ((Number(o.customers) || 0) < minCust) return false;
+	    const outageStart = parseDateMaybe(o.start);
+	    const outageEnd = parseDateMaybe(o.end) || outageStart;
+	    if (outageStart || outageEnd) {
+	      const begin = outageStart ? outageStart.getTime() : outageEnd.getTime();
+	      const finish = outageEnd ? outageEnd.getTime() : begin;
+	      if (finish < startMs || begin > endMs) return false;
+	    }
+	    if (!includeMomentary && isMomentaryOutage(o)) return false;
+	    if (correlatedOnly && !o.stormRelated) return false;
+	    return true;
+	  });
 
-  STATE.layers.outages.clearLayers();
-  STATE.layers.correlated.clearLayers();
-  STATE.layerIndex = {};
+	  STATE.filteredStrikes = STATE.strikes.filter(s => isWithinActiveRange(s.time));
+	  STATE.layers.outages.clearLayers();
+	  STATE.layers.correlated.clearLayers();
+	  STATE.layers.strikes.clearLayers();
+	  STATE.layers.heat.clearLayers();
+	  STATE.layerIndex = {};
+	  STATE.heatLayer = null;
 
-  const filteredBounds = [];
+	  const heatPts = [];
+	  STATE.filteredStrikes.forEach(s => {
+	    const marker = L.circleMarker([s.lat, s.lon], {
+	      pane: 'strikesPane',
+	      renderer: STATE.renderers.strikes,
+	      radius: 2.2,
+	      color: '#facc15',
+	      weight: 0,
+	      fillColor: '#facc15',
+	      fillOpacity: 0.78 * STATE.layerOpacity
+	    });
+	    marker.bindPopup(`
+	      <div style="font-weight:800;margin-bottom:8px;">Lightning strike</div>
+	      <div class="popup-grid">
+	        <div class="k">Time</div><div class="v">${esc(s.time)}</div>
+	        <div class="k">Power</div><div class="v">${esc(s.power)} kA</div>
+	        <div class="k">Type</div><div class="v">${esc(s.type)}</div>
+	        <div class="k">Lat/Lon</div><div class="v">${s.lat.toFixed(5)}, ${s.lon.toFixed(5)}</div>
+	      </div>
+	    `);
+	    marker.addTo(STATE.layers.strikes);
+	    heatPts.push([s.lat, s.lon, 0.18 + (0.44 * STATE.layerOpacity)]);
+	  });
+	  if (heatPts.length) {
+	    STATE.heatLayer = L.heatLayer(heatPts, {
+	      radius: 18,
+	      blur: 24,
+	      maxZoom: 12,
+	      minOpacity: 0.05 * STATE.layerOpacity,
+	      gradient: {
+	        0.18: `rgba(0, 48, 180, ${STATE.layerOpacity})`,
+	        0.42: `rgba(0, 210, 255, ${STATE.layerOpacity})`,
+	        0.62: `rgba(0, 255, 120, ${STATE.layerOpacity})`,
+	        0.78: `rgba(255, 235, 0, ${STATE.layerOpacity})`,
+	        1.0: `rgba(255, 40, 0, ${STATE.layerOpacity})`
+	      }
+	    }).addTo(STATE.layers.heat);
+	  }
+
+	  const filteredBounds = [];
   STATE.filteredOutages.forEach(o => {
     const color = causeColor(o.cause);
     const radius = markerRadius(o.customers);
@@ -1301,12 +1472,12 @@ function applyFilters() {
       pane: 'outagesPane',
       renderer: STATE.renderers.outages,
       radius,
-      color: '#09121f',
-      weight: 1.2,
-      fillColor: color,
-      fillOpacity: 0.88,
-      bubblingMouseEvents: false
-    };
+	      color: '#09121f',
+	      weight: Math.max(0.6, 1.2 * STATE.layerOpacity),
+	      fillColor: color,
+	      fillOpacity: 0.88 * STATE.layerOpacity,
+	      bubblingMouseEvents: false
+	    };
 
     const marker = L.circleMarker([o.lat, o.lon], baseStyle).addTo(STATE.layers.outages);
     marker._baseStyle = baseStyle;
@@ -1333,24 +1504,24 @@ function applyFilters() {
         pane: 'correlatedPane',
         renderer: STATE.renderers.correlated,
         radius: radius + 5,
-        color: '#15c6b4',
-        weight: 1.5,
-        fillOpacity: 0,
-        opacity: 0.95,
-        interactive: false
-      }).addTo(STATE.layers.correlated);
+	        color: '#15c6b4',
+	        weight: Math.max(0.8, 1.5 * STATE.layerOpacity),
+	        fillOpacity: 0,
+	        opacity: 0.95 * STATE.layerOpacity,
+	        interactive: false
+	      }).addTo(STATE.layers.correlated);
     }
     filteredBounds.push([o.lat, o.lon]);
-  });
+	  });
 
-  const totalCustomers = STATE.filteredOutages.reduce((s, o) => s + (Number(o.customers) || 0), 0);
-  document.getElementById('statStrikes').textContent = fmtNum(STATE.strikes.length);
-  document.getElementById('statOutages').textContent = fmtNum(STATE.filteredOutages.length);
-  document.getElementById('statCustomers').textContent = fmtNum(totalCustomers);
-  document.getElementById('filteredOutagesPill').textContent = `Filtered outages: ${fmtNum(STATE.filteredOutages.length)}`;
-  document.getElementById('filteredCustomersPill').textContent = `Filtered customers: ${fmtNum(totalCustomers)}`;
-  document.getElementById('eventRange').textContent = `${STATE.eventLabel} · ${formatDateRange(STATE.outages, STATE.strikes)}`;
-  updateDistrictBars(STATE.filteredOutages);
+	  const totalCustomers = STATE.filteredOutages.reduce((s, o) => s + (Number(o.customers) || 0), 0);
+	  document.getElementById('statStrikes').textContent = fmtNum(STATE.filteredStrikes.length);
+	  document.getElementById('statOutages').textContent = fmtNum(STATE.filteredOutages.length);
+	  document.getElementById('statCustomers').textContent = fmtNum(totalCustomers);
+	  document.getElementById('filteredOutagesPill').textContent = `Filtered outages: ${fmtNum(STATE.filteredOutages.length)}`;
+	  document.getElementById('filteredCustomersPill').textContent = `Filtered customers: ${fmtNum(totalCustomers)}`;
+	  updateRangeDisplays();
+	  updateDistrictBars(STATE.filteredOutages);
   syncLayerVisibility();
 
   STATE.filteredBounds = filteredBounds.length ? L.latLngBounds(filteredBounds) : null;
@@ -1371,6 +1542,17 @@ function syncLayerVisibility() {
   ensure('towns', STATE.layers.towns);
   if (STATE.layerState.labels && !STATE.map.hasLayer(STATE.labelLayer)) STATE.labelLayer.addTo(STATE.map);
   if (!STATE.layerState.labels && STATE.map.hasLayer(STATE.labelLayer)) STATE.map.removeLayer(STATE.labelLayer);
+  applyLayerOpacity();
+}
+
+function applyLayerOpacity() {
+  if (!STATE.map) return;
+  const opacity = Math.max(0.1, Math.min(1, STATE.layerOpacity || 0.65));
+  ['servicePane','townsPane'].forEach(name => {
+    const pane = STATE.map.getPane(name);
+    if (pane) pane.style.opacity = String(opacity);
+  });
+  if (STATE.labelLayer?.setOpacity) STATE.labelLayer.setOpacity(0.72 * opacity);
 }
 
 function wireUI() {
@@ -1383,12 +1565,22 @@ function wireUI() {
     });
   });
 
-  ['searchBox','districtFilter','causeFilter','weatherFilter','correlatedOnly','includeMomentary'].forEach(id => {
+  ['searchBox','districtFilter','causeFilter','weatherFilter','correlatedOnly','includeMomentary','startDateFilter','endDateFilter'].forEach(id => {
     document.getElementById(id).addEventListener('input', applyFilters);
     document.getElementById(id).addEventListener('change', applyFilters);
   });
   document.getElementById('customerRange').addEventListener('input', e => {
-    document.getElementById('customerRangeValue').textContent = e.target.value;
+    setCustomerFilterValue(customerSliderToValue(e.target.value), 'slider');
+    applyFilters();
+  });
+  document.getElementById('customerMinInput').addEventListener('input', e => {
+    setCustomerFilterValue(e.target.value, 'input');
+    applyFilters();
+  });
+  document.getElementById('layerOpacityRange').addEventListener('input', e => {
+    STATE.layerOpacity = Math.max(0.1, Math.min(1, (Number(e.target.value) || 65) / 100));
+    document.getElementById('layerOpacityValue').textContent = `${Math.round(STATE.layerOpacity * 100)}%`;
+    applyLayerOpacity();
     applyFilters();
   });
   document.getElementById('baseFilter').addEventListener('change', e => {
@@ -1401,8 +1593,11 @@ function wireUI() {
     document.getElementById('districtFilter').value = '';
     document.getElementById('causeFilter').value = '';
     document.getElementById('weatherFilter').value = '';
-    document.getElementById('customerRange').value = '0';
-    document.getElementById('customerRangeValue').textContent = '0';
+    if (STATE.dataTimeRange) {
+      document.getElementById('startDateFilter').value = formatDateTimeLocal(STATE.dataTimeRange.min);
+      document.getElementById('endDateFilter').value = formatDateTimeLocal(STATE.dataTimeRange.max);
+    }
+    setCustomerFilterValue(0, 'input');
     document.getElementById('correlatedOnly').checked = false;
     document.getElementById('includeMomentary').checked = true;
     applyFilters();
@@ -1485,10 +1680,10 @@ document.getElementById('loadSampleBtn').addEventListener('click', () => {
 document.getElementById('clearFilesBtn').addEventListener('click', () => {
   STATE.outages = [];
   STATE.strikes = [];
-  STATE.dataReady = false;
-  STATE.eventLabel = '';
-  STATE.sourceLabel = '';
-  document.getElementById('headerSub').textContent = 'Interactive satellite map with service area, outages, and lightning overlays';
+	  STATE.dataReady = false;
+	  STATE.eventLabel = '';
+	  STATE.sourceLabel = '';
+	  document.getElementById('headerSub').textContent = 'Data range: no event loaded yet.';
   document.getElementById('fileOutage').value = '';
   document.getElementById('fileStrike').value = '';
   document.getElementById('parseError').textContent = '';
@@ -1543,5 +1738,333 @@ initMap();
 buildDataLayers();
 showUpload(true);
 </script>
-</body>
+<script data-pplx-inline-edit>
+(function () {
+  if (window === window.top) return;
+
+  const allowedParentOrigins = ["https://www.perplexity.ai","https://perplexity.ai","https://testing.perplexity.ai","https://staging.perplexity.ai","https://*.preview.i.perplexity.ai","http://localhost:3000","http://127.0.0.1:3000","http://localhost:5173","http://127.0.0.1:5173"];
+  const MAX_FONT_BYTES = 500 * 1024;
+  const MAX_TOTAL_FONT_BYTES = 2 * 1024 * 1024;
+  let scrollForwarding = false;
+  let scrollRaf = 0;
+  let trustedTopOrigin = null;
+
+  // Allow entries like "https://*.preview.i.perplexity.ai" — the wildcard
+  // matches a single DNS label (no dots), so "https://*.foo" cannot stretch
+  // across multiple labels.
+  function matchesAllowedOrigin(origin) {
+    if (!origin) return false;
+    for (const entry of allowedParentOrigins) {
+      if (!entry.includes("*")) {
+        if (entry === origin) return true;
+        continue;
+      }
+      const pattern = new RegExp(
+        "^" +
+          entry.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, "[^.]+") +
+          "$",
+      );
+      if (pattern.test(origin)) return true;
+    }
+    return false;
+  }
+
+  // Trust decision: when the sender is same-origin-visible (event.origin is a
+  // real origin like https://www.perplexity.ai) we trust event.origin directly.
+  // When event.origin is "null" (opaque broker srcdoc), we fall back to the
+  // broker's stamped `parentOrigin` to identify the top window. The fallback
+  // is claim-only — we rely on the browser's native `targetOrigin` enforcement
+  // on the response path (see postToTrustedTop) to ensure replies can't be
+  // delivered to anyone but the actual top window of that claimed origin.
+  function getTrustedParentOrigin(event) {
+    const forwardedParentOrigin =
+      typeof event.data.parentOrigin === "string" ? event.data.parentOrigin : null;
+    const parentOrigin = event.origin === "null" ? forwardedParentOrigin : event.origin;
+    return matchesAllowedOrigin(parentOrigin) ? parentOrigin : null;
+  }
+
+  // All responses go to window.top with targetOrigin = the allowlisted origin.
+  // An attacker that iframes us inside their own null-origin broker can claim
+  // any parentOrigin they like, but the browser will drop the reply whenever
+  // the real top's origin doesn't match — so the screenshot never leaves.
+  function postToTrustedTop(message) {
+    if (!trustedTopOrigin) return;
+    try {
+      window.top.postMessage(message, trustedTopOrigin);
+    } catch (_error) {}
+  }
+
+  function inlineAll(original, clone) {
+    if (original.nodeType !== 1 || clone.nodeType !== 1) return;
+
+    try {
+      const computedStyle = getComputedStyle(original);
+      // cssText on a computed style is the serialized declaration in modern
+      // Chromium/Safari — a single read beats enumerating ~400 longhand
+      // properties. Firefox returns "" here, so we fall back on empty.
+      const serialized = computedStyle.cssText;
+      if (serialized) {
+        clone.style.cssText = serialized;
+      } else {
+        const parts = new Array(computedStyle.length);
+        for (let index = 0; index < computedStyle.length; index += 1) {
+          const property = computedStyle[index];
+          parts[index] = `${property}:${computedStyle.getPropertyValue(property)};`;
+        }
+        clone.style.cssText = parts.join("");
+      }
+    } catch (_error) {}
+
+    const originalChildren = original.children;
+    const clonedChildren = clone.children;
+    for (
+      let index = 0;
+      index < originalChildren.length && index < clonedChildren.length;
+      index += 1
+    ) {
+      inlineAll(originalChildren[index], clonedChildren[index]);
+    }
+  }
+
+  function extractFontUrl(srcValue) {
+    const matches = [
+      ...srcValue.matchAll(
+        /url\(["']?([^"')]+)["']?\)(?:\s*format\(["']?([^"')]+)["']?\))?/gi,
+      ),
+    ];
+    if (matches.length === 0) return null;
+    const woff2 = matches.find((m) => m[2] && m[2].toLowerCase().includes("woff2"));
+    if (woff2) return woff2[1];
+    const woff = matches.find((m) => m[2] && m[2].toLowerCase().includes("woff"));
+    if (woff) return woff[1];
+    return matches[0][1];
+  }
+
+  // Cache resolved font URL -> data URI across captures. Fonts on a page
+  // essentially never change, and a batch run emits multiple captures back to
+  // back — without this we'd refetch + re-base64 every time.
+  const fontDataUriCache = new Map();
+  const SRC_DECLARATION_RE = /src\s*:\s*[^;}]+/i;
+
+  async function fetchAsDataUri(url) {
+    if (fontDataUriCache.has(url)) return fontDataUriCache.get(url);
+    let dataUri = null;
+    try {
+      const response = await fetch(url, { mode: "cors", credentials: "omit" });
+      if (response.ok) {
+        const blob = await response.blob();
+        if (blob.size <= MAX_FONT_BYTES) {
+          dataUri = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () =>
+              resolve(typeof reader.result === "string" ? reader.result : null);
+            reader.onerror = () => resolve(null);
+            reader.readAsDataURL(blob);
+          });
+        }
+      }
+    } catch (_error) {
+      dataUri = null;
+    }
+    fontDataUriCache.set(url, dataUri);
+    return dataUri;
+  }
+
+  function collectFontFaceRuleTexts() {
+    const rules = [];
+    for (const sheet of document.styleSheets) {
+      let cssRules;
+      try {
+        cssRules = sheet.cssRules;
+      } catch (_error) {
+        continue;
+      }
+      if (!cssRules) continue;
+      for (const rule of cssRules) {
+        const cssText = rule.cssText || "";
+        if (cssText.startsWith("@font-face")) rules.push(cssText);
+      }
+    }
+    return rules;
+  }
+
+  async function buildInlinedFontCss() {
+    const ruleTexts = collectFontFaceRuleTexts();
+    if (ruleTexts.length === 0) return null;
+
+    const resolved = ruleTexts.map((cssText) => {
+      if (!SRC_DECLARATION_RE.test(cssText)) return null;
+      const srcMatch = cssText.match(/src\s*:\s*([^;}]+)[;}]/i);
+      if (!srcMatch) return null;
+      const url = extractFontUrl(srcMatch[1]);
+      if (!url) return null;
+      try {
+        return { cssText, url: new URL(url, document.baseURI).href };
+      } catch (_error) {
+        return null;
+      }
+    });
+
+    const dataUris = await Promise.all(
+      resolved.map((entry) => (entry ? fetchAsDataUri(entry.url) : Promise.resolve(null))),
+    );
+
+    const inlined = [];
+    let totalBytes = 0;
+    for (let index = 0; index < resolved.length; index += 1) {
+      const entry = resolved[index];
+      const dataUri = dataUris[index];
+      if (!entry || !dataUri) continue;
+      const approxBytes = dataUri.length * 0.75;
+      if (totalBytes + approxBytes > MAX_TOTAL_FONT_BYTES) break;
+      totalBytes += approxBytes;
+      inlined.push(entry.cssText.replace(SRC_DECLARATION_RE, `src: url("${dataUri}")`));
+    }
+    return inlined.length > 0 ? inlined.join("\n") : null;
+  }
+
+  function stripExternal(clone) {
+    const images = clone.querySelectorAll("img");
+    for (let index = 0; index < images.length; index += 1) {
+      const src = images[index].getAttribute("src");
+      if (src && !src.startsWith("data:")) images[index].removeAttribute("src");
+    }
+
+    const elements = clone.querySelectorAll("*");
+    for (let index = 0; index < elements.length; index += 1) {
+      const style = elements[index].style.cssText;
+      if (style && style.includes("url(")) {
+        elements[index].style.cssText = style.replace(
+          /url\(["']?(?!data:)[^)"']*["']?\)/gi,
+          "none",
+        );
+      }
+    }
+  }
+
+  function emitScroll() {
+    scrollRaf = 0;
+    if (!scrollForwarding) return;
+    postToTrustedTop({
+      type: "INLINE_EDIT_SCROLL",
+      scrollX: window.scrollX,
+      scrollY: window.scrollY,
+    });
+  }
+
+  window.addEventListener(
+    "scroll",
+    function () {
+      if (!scrollForwarding || scrollRaf) return;
+      scrollRaf = requestAnimationFrame(emitScroll);
+    },
+    { passive: true, capture: true },
+  );
+
+  async function handleCaptureRequest(event) {
+    const requestId = event.data.requestId;
+    const scrollX = window.scrollX;
+    const scrollY = window.scrollY;
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+
+    function postResult(dataUrl) {
+      postToTrustedTop({
+        type: "INLINE_EDIT_SCREENSHOT_RESULT",
+        requestId,
+        dataUrl,
+        scrollX,
+        scrollY,
+      });
+    }
+
+    try {
+      // Wait for any pending web fonts to resolve so both inline metrics and
+      // the @font-face inlining below see the same loaded faces.
+      if (document.fonts && document.fonts.ready) {
+        try {
+          await document.fonts.ready;
+        } catch (_error) {}
+      }
+
+      const clone = document.documentElement.cloneNode(true);
+      inlineAll(document.documentElement, clone);
+
+      const removedNodes = clone.querySelectorAll("script,link[rel=\"stylesheet\"],style");
+      for (let index = 0; index < removedNodes.length; index += 1) {
+        removedNodes[index].remove();
+      }
+
+      stripExternal(clone);
+
+      // Re-embed web fonts as data-URI @font-face rules so the SVG rasterizer
+      // can resolve them — external font URLs aren't fetched during
+      // foreignObject rendering, which would otherwise force a fallback face
+      // and change text metrics.
+      const inlinedFontCss = await buildInlinedFontCss();
+      if (inlinedFontCss) {
+        const styleEl = document.createElement("style");
+        styleEl.textContent = inlinedFontCss;
+        const head = clone.querySelector("head");
+        if (head) head.appendChild(styleEl);
+        else clone.insertBefore(styleEl, clone.firstChild);
+      }
+
+      const html = new XMLSerializer().serializeToString(clone);
+      const svg =
+        `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">` +
+        '<foreignObject width="100%" height="100%">' +
+        `<div xmlns="http://www.w3.org/1999/xhtml" style="width:${width}px;height:${height}px;overflow:hidden">` +
+        `<div style="transform:translate(-${scrollX}px,-${scrollY}px);transform-origin:top left">` +
+        html +
+        "</div></div></foreignObject></svg>";
+      const svgUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+      const image = new Image();
+      image.onload = function () {
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext("2d").drawImage(image, 0, 0);
+        postResult(canvas.toDataURL("image/png"));
+      };
+      image.onerror = function () {
+        postResult(null);
+      };
+      image.src = svgUrl;
+    } catch (_error) {
+      postResult(null);
+    }
+  }
+
+  window.addEventListener("message", function (event) {
+    if (!event.data) return;
+    // Only accept messages from the direct parent frame. Blocks sibling /
+    // unrelated-window postMessage senders that could otherwise reach us.
+    if (event.source !== window.parent) return;
+
+    const trustedParentOrigin = getTrustedParentOrigin(event);
+    if (!trustedParentOrigin) return;
+    trustedTopOrigin = trustedParentOrigin;
+
+    if (event.data.type === "INLINE_EDIT_SCROLL_START") {
+      scrollForwarding = true;
+      emitScroll();
+      return;
+    }
+
+    if (event.data.type === "INLINE_EDIT_SCROLL_STOP") {
+      scrollForwarding = false;
+      if (scrollRaf) cancelAnimationFrame(scrollRaf);
+      scrollRaf = 0;
+      return;
+    }
+
+    if (event.data.type !== "INLINE_EDIT_CAPTURE_REQUEST") return;
+
+    handleCaptureRequest(event);
+  });
+})();
+
+
+</script></body>
 </html>
